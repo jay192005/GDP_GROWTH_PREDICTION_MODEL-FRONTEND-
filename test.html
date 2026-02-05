@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>GDP Forecaster API Test</h1>
+    <button onclick="testAPI()">Test API Connection</button>
+    <div id="result"></div>
+    
+    <script>
+        async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                // Test countries endpoint
+                const response = await fetch('http://localhost:5000/api/countries');
+                const countries = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <h2>✅ API Working!</h2>
+                    <p>Found ${countries.length} countries</p>
+                    <p>First 5: ${countries.slice(0, 5).join(', ')}</p>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h2>❌ API Error</h2>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
