@@ -1,0 +1,26 @@
+GDP PREDICTION MODEL - 80/20 SPLIT EVALUATION
+============================================================
+
+    Metric          80/20 Split        Temporal Split
+  Train R²               0.4019                0.3841
+   Test R²               0.0987               -0.1799
+Train RMSE              11.4192               11.5362
+ Test RMSE              13.0476               11.9332
+ Train MAE               8.0957                8.1425
+  Test MAE               9.1426                9.3503
+Train MAPE 7975164481278555.00%  7380846384157553.00%
+ Test MAPE 7095278520553734.00% 18307097512546848.00%
+
+============================================================
+KEY INSIGHTS
+============================================================
+
+80/20 Random Split:
+  Test R²: 0.0987
+  Test RMSE: 13.0476
+  Test MAE: 9.1426
+
+Temporal Split:
+  Test R²: -0.1799
+  Test RMSE: 11.9332
+  Test MAE: 9.3503
