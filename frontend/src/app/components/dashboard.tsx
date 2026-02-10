@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ArrowLeft, TrendingUp, TrendingDown, Sparkles, Download, RefreshCw, Info, AlertCircle, Check, BarChart3, Activity, DollarSign, Users, Package, Building2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
@@ -38,6 +38,8 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import * as apiService from "../../services/api";
 import { ChartDataPoint } from "../../services/api";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 interface DashboardProps {
   onBack: () => void;
@@ -201,19 +203,47 @@ export function Dashboard({ onBack }: DashboardProps) {
       const con = parseFloat(consumption);
       const gov = parseFloat(governmentSpending);
 
+      // Calculate total absolute contribution (sum of absolute values)
+      const totalContribution = Math.abs(pop) + Math.abs(exp) + Math.abs(imp) + Math.abs(inv) + Math.abs(con) + Math.abs(gov);
+      
+      // Calculate percentage contribution for each factor
       const contributions = [
-        { name: "Population", value: pop * 0.15, percentage: 15 },
-        { name: "Exports", value: exp * 0.25, percentage: 25 },
-        { name: "Trade Balance", value: (exp - imp) * 0.2, percentage: 20 },
-        { name: "Investment", value: inv * 0.2, percentage: 20 },
-        { name: "Consumption", value: con * 0.15, percentage: 15 },
-        { name: "Govt Spending", value: gov * 0.05, percentage: 5 },
+        { 
+          name: "Population", 
+          value: pop, 
+          percentage: totalContribution > 0 ? Math.abs(pop) / totalContribution * 100 : 0 
+        },
+        { 
+          name: "Exports", 
+          value: exp, 
+          percentage: totalContribution > 0 ? Math.abs(exp) / totalContribution * 100 : 0 
+        },
+        { 
+          name: "Imports", 
+          value: imp, 
+          percentage: totalContribution > 0 ? Math.abs(imp) / totalContribution * 100 : 0 
+        },
+        { 
+          name: "Investment", 
+          value: inv, 
+          percentage: totalContribution > 0 ? Math.abs(inv) / totalContribution * 100 : 0 
+        },
+        { 
+          name: "Consumption", 
+          value: con, 
+          percentage: totalContribution > 0 ? Math.abs(con) / totalContribution * 100 : 0 
+        },
+        { 
+          name: "Govt Spending", 
+          value: gov, 
+          percentage: totalContribution > 0 ? Math.abs(gov) / totalContribution * 100 : 0 
+        },
       ];
       setContributionData(contributions);
 
       // Calculate confidence based on input consistency
       const consistency = 100 - Math.abs(exp - imp) * 2 - Math.abs(inv - con) * 1.5;
-      setConfidenceScore(Math.max(85, Math.min(98, consistency)));
+      setConfidenceScore(Math.round(Math.max(85, Math.min(98, consistency))));
 
       setShowPrediction(true);
     } catch (error) {
@@ -235,8 +265,303 @@ export function Dashboard({ onBack }: DashboardProps) {
     setPrediction(null);
   };
 
-  const handleExport = () => {
-    alert("Export functionality would download predictions as PDF/CSV");
+  const handleExport = async () => {
+    if (!prediction || !selectedCountry) {
+      alert("Please run a simulation first before exporting.");
+      return;
+    }
+
+    try {
+      // Show loading indicator
+      const exportBtn = document.querySelector('[data-export-btn]');
+      if (exportBtn) {
+        const btnElement = exportBtn as HTMLButtonElement;
+        btnElement.disabled = true;
+        btnElement.textContent = 'Generating PDF...';
+      }
+
+      // Wait a bit for any animations to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Create PDF
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      
+      // PAGE 1: Header and Summary
+      pdf.setFillColor(15, 23, 42);
+      pdf.rect(0, 0, pageWidth, 40, 'F');
+      
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(24);
+      pdf.text('GDP Scenario Simulator', margin, 20);
+      
+      pdf.setFontSize(12);
+      pdf.text('Economic Scenario Analysis Report', margin, 30);
+      
+      const currentDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      pdf.setFontSize(10);
+      pdf.text(currentDate, pageWidth - margin, 30, { align: 'right' });
+      
+      pdf.setTextColor(0, 0, 0);
+      
+      // Simulation Results
+      let yPos = 55;
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Simulation Results', margin, yPos);
+      
+      yPos += 10;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Country: ${selectedCountry}`, margin, yPos);
+      
+      yPos += 7;
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(16, 185, 129);
+      pdf.text(`Predicted GDP Growth: ${prediction}%`, margin, yPos);
+      pdf.setTextColor(0, 0, 0);
+      
+      yPos += 10;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Confidence Score: ${confidenceScore}%`, margin, yPos);
+      yPos += 7;
+      pdf.text(`Simulation Type: ${predictionMethod}`, margin, yPos);
+      
+      // Input Parameters
+      yPos += 15;
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Input Parameters', margin, yPos);
+      
+      yPos += 10;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      
+      const inputs = [
+        { label: 'Population Growth', value: populationGrowth },
+        { label: 'Exports Growth', value: exportsGrowth },
+        { label: 'Imports Growth', value: importsGrowth },
+        { label: 'Investment (Capital Formation)', value: investment },
+        { label: 'Consumption Expenditure', value: consumption },
+        { label: 'Government Spending', value: governmentSpending },
+      ];
+      
+      inputs.forEach(input => {
+        pdf.text(`${input.label}: ${input.value}%`, margin, yPos);
+        yPos += 7;
+      });
+      
+      // Contribution Breakdown
+      yPos += 10;
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Contribution Breakdown', margin, yPos);
+      
+      yPos += 10;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      
+      contributionData.forEach(item => {
+        if (yPos > pageHeight - 30) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        pdf.text(`${item.name}: ${item.value.toFixed(2)}% (${item.percentage.toFixed(1)}% contribution)`, margin, yPos);
+        yPos += 7;
+      });
+      
+      // Interpretation
+      yPos += 10;
+      if (yPos > pageHeight - 50) {
+        pdf.addPage();
+        yPos = 20;
+      }
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Interpretation', margin, yPos);
+      
+      yPos += 10;
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      const interpretation = `This scenario simulation shows that if the specified growth rates occur simultaneously, GDP is predicted to grow by ${prediction}%. This is a sensitivity analysis tool designed for "what-if" economic scenarios, not a forecast of future GDP.`;
+      const splitInterpretation = pdf.splitTextToSize(interpretation, pageWidth - 2 * margin);
+      pdf.text(splitInterpretation, margin, yPos);
+      
+      // PAGE 2: Visual Data Summary
+      pdf.addPage();
+      yPos = 20;
+      
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Visual Data Summary', margin, yPos);
+      yPos += 15;
+      
+      // Historical Data Summary
+      if (historicalData.length > 0) {
+        pdf.setFontSize(14);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Historical GDP Growth Data', margin, yPos);
+        yPos += 8;
+        
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'normal');
+        
+        const recentData = historicalData.filter(d => d.type === 'historical').slice(-10);
+        pdf.text('Recent 10 Years:', margin, yPos);
+        yPos += 6;
+        
+        recentData.forEach(point => {
+          pdf.text(`  ${point.year}: ${point.growth}%`, margin + 5, yPos);
+          yPos += 5;
+        });
+        
+        yPos += 5;
+        const avgGrowth = recentData.reduce((sum, d) => sum + d.growth, 0) / recentData.length;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`Average Growth (Last 10 Years): ${avgGrowth.toFixed(2)}%`, margin, yPos);
+        yPos += 10;
+      }
+      
+      // Contribution Chart Data
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('GDP Growth Contributors (Visual Breakdown)', margin, yPos);
+      yPos += 8;
+      
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      
+      // Draw simple bar chart
+      const barWidth = 60;
+      const barHeight = 8;
+      const maxPercentage = Math.max(...contributionData.map(d => d.percentage));
+      
+      contributionData.forEach((item, index) => {
+        if (yPos > pageHeight - 30) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        
+        // Label
+        pdf.text(item.name, margin, yPos + 5);
+        
+        // Bar
+        const barLength = (item.percentage / maxPercentage) * barWidth;
+        pdf.setFillColor(16, 185, 129);
+        pdf.rect(margin + 70, yPos, barLength, barHeight, 'F');
+        
+        // Percentage
+        pdf.text(`${item.percentage.toFixed(1)}%`, margin + 135, yPos + 5);
+        
+        yPos += barHeight + 4;
+      });
+      
+      yPos += 10;
+      
+      // Economic Indicators Summary
+      if (yPos > pageHeight - 80) {
+        pdf.addPage();
+        yPos = 20;
+      }
+      
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Economic Indicators Summary', margin, yPos);
+      yPos += 8;
+      
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      
+      const indicators = [
+        { name: 'Population Growth', value: parseFloat(populationGrowth) },
+        { name: 'Exports Growth', value: parseFloat(exportsGrowth) },
+        { name: 'Imports Growth', value: parseFloat(importsGrowth) },
+        { name: 'Investment Growth', value: parseFloat(investment) },
+        { name: 'Consumption Growth', value: parseFloat(consumption) },
+        { name: 'Govt Spending Growth', value: parseFloat(governmentSpending) },
+      ];
+      
+      const maxIndicator = Math.max(...indicators.map(i => Math.abs(i.value)));
+      
+      indicators.forEach(indicator => {
+        if (yPos > pageHeight - 30) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        
+        pdf.text(indicator.name, margin, yPos + 5);
+        
+        const barLength = (Math.abs(indicator.value) / maxIndicator) * barWidth;
+        const color = indicator.value >= 0 ? [16, 185, 129] : [239, 68, 68];
+        pdf.setFillColor(...color);
+        pdf.rect(margin + 70, yPos, barLength, barHeight, 'F');
+        
+        pdf.text(`${indicator.value.toFixed(2)}%`, margin + 135, yPos + 5);
+        
+        yPos += barHeight + 4;
+      });
+      
+      // Note about charts
+      yPos += 15;
+      if (yPos > pageHeight - 40) {
+        pdf.addPage();
+        yPos = 20;
+      }
+      
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(100, 100, 100);
+      const note = 'Note: For interactive charts and detailed visualizations, please view the application dashboard. This report provides a summary of the key data points.';
+      const splitNote = pdf.splitTextToSize(note, pageWidth - 2 * margin);
+      pdf.text(splitNote, margin, yPos);
+      
+      // Footer on all pages
+      pdf.setTextColor(0, 0, 0);
+      const pageCount = pdf.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(8);
+        pdf.setTextColor(128, 128, 128);
+        pdf.text(
+          'Generated by GDP Scenario Simulator - AI-Powered Economic Analysis',
+          pageWidth / 2,
+          pageHeight - 10,
+          { align: 'center' }
+        );
+        pdf.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+      }
+      
+      // Save PDF
+      const fileName = `GDP_Scenario_${selectedCountry.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+      
+      // Reset button
+      if (exportBtn) {
+        const btnElement = exportBtn as HTMLButtonElement;
+        btnElement.disabled = false;
+        btnElement.innerHTML = '<svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Export Report';
+      }
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert(`Failed to generate PDF report. Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Reset button
+      const exportBtn = document.querySelector('[data-export-btn]');
+      if (exportBtn) {
+        const btnElement = exportBtn as HTMLButtonElement;
+        btnElement.disabled = false;
+        btnElement.innerHTML = '<svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Export Report';
+      }
+    }
   };
 
   const CustomTooltip = ({ active, payload }: any) => {
@@ -311,8 +636,8 @@ export function Dashboard({ onBack }: DashboardProps) {
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-3xl">GDP Forecaster Dashboard</h1>
-              <p className="text-gray-400 text-sm">AI-Powered Economic Analytics & Predictions</p>
+              <h1 className="text-3xl">GDP Scenario Simulator</h1>
+              <p className="text-gray-400 text-sm">AI-Powered Economic Scenario Analysis & What-If Simulations</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -324,6 +649,7 @@ export function Dashboard({ onBack }: DashboardProps) {
               <Button
                 variant="outline"
                 onClick={handleExport}
+                data-export-btn
                 className="bg-white/10 border-white/20 text-white hover:bg-white/20"
               >
                 <Download className="w-4 h-4 mr-2" />
@@ -552,12 +878,12 @@ export function Dashboard({ onBack }: DashboardProps) {
                   {isCalculating ? (
                     <span className="flex items-center gap-2">
                       <RefreshCw className="w-5 h-5 animate-spin" />
-                      Calculating...
+                      Simulating...
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
                       <Sparkles className="w-5 h-5" />
-                      Generate Prediction
+                      Run Scenario Simulation
                     </span>
                   )}
                 </Button>
@@ -582,7 +908,16 @@ export function Dashboard({ onBack }: DashboardProps) {
                       <span className="text-lg">{getRecentTrend()}%</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">Confidence</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-gray-400">Confidence</span>
+                        <div className="group relative">
+                          <Info className="w-3 h-3 text-gray-400 cursor-help" />
+                          <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-56 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50">
+                            <p>Measures input consistency. Higher = more balanced scenario.</p>
+                            <div className="absolute top-full left-4 -mt-1 border-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        </div>
+                      </div>
                       <span className="text-lg text-[#10b981]">{confidenceScore}%</span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -654,10 +989,20 @@ export function Dashboard({ onBack }: DashboardProps) {
                             <Check className="w-5 h-5" />
                             <span className="text-sm opacity-90">Prediction Complete</span>
                           </div>
-                          <h2 className="text-lg opacity-90">Predicted GDP Growth Rate</h2>
+                          <h2 className="text-lg opacity-90">Simulated GDP Growth Rate</h2>
                         </div>
                         <div className="bg-white/20 rounded-xl px-4 py-3 backdrop-blur-sm">
-                          <p className="text-xs opacity-90">Confidence</p>
+                          <div className="flex items-center gap-1">
+                            <p className="text-xs opacity-90">Confidence</p>
+                            <div className="group relative">
+                              <Info className="w-3 h-3 opacity-70 cursor-help" />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50">
+                                <p className="font-semibold mb-1">Confidence Score</p>
+                                <p>Indicates how balanced and consistent your input values are. Higher scores mean more realistic economic scenarios.</p>
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
+                              </div>
+                            </div>
+                          </div>
                           <p className="text-3xl">{confidenceScore}%</p>
                         </div>
                       </div>
@@ -667,18 +1012,14 @@ export function Dashboard({ onBack }: DashboardProps) {
                         <TrendingUp className="w-12 h-12 animate-pulse" />
                       </div>
                       
-                      <div className="flex items-center gap-6 text-sm opacity-90">
+                      <div className="flex flex-wrap items-center gap-6 text-sm opacity-90">
                         <div>
                           <p className="opacity-75">Country</p>
-                          <p className="text-lg">{selectedCountry}</p>
-                        </div>
-                        <div>
-                          <p className="opacity-75">Forecast Period</p>
-                          <p className="text-lg">2022-2023</p>
+                          <p className="text-lg font-semibold">{selectedCountry}</p>
                         </div>
                         {predictionMethod && (
                           <div>
-                            <p className="opacity-75">Method</p>
+                            <p className="opacity-75">Simulation Type</p>
                             <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
                               predictionMethod === 'AI Model' 
                                 ? 'bg-green-500/30 text-green-100' 
@@ -709,7 +1050,7 @@ export function Dashboard({ onBack }: DashboardProps) {
 
                   {/* Timeline Chart */}
                   <TabsContent value="timeline" className="mt-0">
-                    <div>
+                    <div data-chart="timeline">
                       <h3 className="text-xl mb-6 text-[#0f172a]">GDP Growth Timeline (1972-2023)</h3>
                       <ResponsiveContainer width="100%" height={450}>
                         <AreaChart data={historicalData}>
@@ -787,7 +1128,7 @@ export function Dashboard({ onBack }: DashboardProps) {
 
                   {/* Contribution Breakdown */}
                   <TabsContent value="breakdown" className="mt-0">
-                    <div>
+                    <div data-chart="breakdown">
                       <h3 className="text-xl mb-6 text-[#0f172a]">GDP Growth Contributors</h3>
                       <div className="grid grid-cols-2 gap-6">
                         <ResponsiveContainer width="100%" height={400}>
@@ -797,7 +1138,7 @@ export function Dashboard({ onBack }: DashboardProps) {
                               cx="50%"
                               cy="50%"
                               labelLine={false}
-                              label={({ name, percentage }) => `${name}: ${percentage}%`}
+                              label={({ name, percentage }) => `${name}: ${percentage.toFixed(1)}%`}
                               outerRadius={120}
                               fill="#8884d8"
                               dataKey="percentage"
@@ -818,7 +1159,7 @@ export function Dashboard({ onBack }: DashboardProps) {
                                 <span className="text-sm font-semibold">{item.value.toFixed(2)}%</span>
                               </div>
                               <Progress value={item.percentage} className="h-2" />
-                              <p className="text-xs text-gray-500 mt-1">Weight: {item.percentage}%</p>
+                              <p className="text-xs text-gray-500 mt-1">Contribution: {item.percentage.toFixed(1)}%</p>
                             </div>
                           ))}
                         </div>
@@ -828,7 +1169,7 @@ export function Dashboard({ onBack }: DashboardProps) {
 
                   {/* Radar Chart for Indicators */}
                   <TabsContent value="indicators" className="mt-0">
-                    <div>
+                    <div data-chart="indicators">
                       <h3 className="text-xl mb-6 text-[#0f172a]">Economic Indicators Radar</h3>
                       <ResponsiveContainer width="100%" height={450}>
                         <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getRadarData()}>
